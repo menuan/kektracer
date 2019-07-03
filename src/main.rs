@@ -1,6 +1,7 @@
 use minifb::{Window, WindowOptions, Key, CursorStyle, MouseMode, MouseButton, Scale};
 use std::error::Error;
 use rand::Rng;
+use std::time::Instant;
 
 struct Bitmap {
     width: usize,
@@ -380,7 +381,13 @@ fn main() -> Result<(), Box<Error>> {
     window.set_cursor_style(CursorStyle::ClosedHand);
 
     let mut bitmap = Bitmap::new(width, height);
-    render(&mut bitmap);
+
+    {
+        eprintln!("Rendering...");
+        let pre_render_instant = Instant::now();
+        render(&mut bitmap);
+        eprintln!("Render completed ({} ms)", pre_render_instant.elapsed().as_millis());
+    }
 
     while window.is_open() && !window.is_key_down(Key::Escape) && !window.is_key_down(Key::Q) {
         if window.get_mouse_down(MouseButton::Left) {
