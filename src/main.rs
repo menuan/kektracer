@@ -1,5 +1,6 @@
 use minifb::{Window, WindowOptions, Key, CursorStyle, MouseMode, MouseButton, Scale};
 use std::error::Error;
+use rand::Rng;
 
 struct Bitmap {
     width: usize,
@@ -47,6 +48,10 @@ struct Vec3 {
 impl Vec3 {
     fn new(x: f32, y: f32, z: f32) -> Vec3 {
         Vec3 { x, y, z }
+    }
+
+    fn zero() -> Vec3 {
+        Vec3::new(0.00, 0.0, 0.0)
     }
 
     fn add(self, other: Vec3) -> Vec3 {
@@ -229,6 +234,28 @@ impl World {
     }
 }
 
+struct Camera {
+    origin: Vec3,
+    lower_left_corner: Vec3,
+    horizontal: Vec3,
+    vertical: Vec3,
+}
+
+impl Camera {
+    fn new() -> Camera {
+        Camera {
+            lower_left_corner :  Vec3::new(-2.0, -1.0, -1.0),
+            horizontal :  Vec3::new(4.0, 0.0, 0.0),
+            vertical :  Vec3::new(0.0, 2.0, 0.0),
+            origin :  Vec3::new(0.0, 0.0, 0.0)
+        }
+    }
+
+    fn ray(&self, u: f32, v: f32) -> Ray {
+        Ray::new(self.origin, self.lower_left_corner.add(self.horizontal.multiply_scalar(u).add(self.vertical.multiply_scalar(v))))
+    }
+}
+
 
 fn color(ray: &Ray, world: &World) -> Vec3 {
     if let Some(hit) = world.hit_test(ray, 0.0, 100000.0) {
@@ -249,27 +276,27 @@ fn render(bitmap: &mut Bitmap) {
         Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0)
     ]);
 
-    let lower_left_corner = Vec3::new(-2.0, -1.0, -1.0);
-    let horizontal = Vec3::new(4.0, 0.0, 0.0);
-    let vertical = Vec3::new(0.0, 2.0, 0.0);
-    let origin = Vec3::new(0.0, 0.0, 0.0);
-
+    let camera = Camera::new();
     let width = bitmap.width();
     let height = bitmap.height();
+    let aa_samples = 10;
+    let mut random = rand::thread_rng();
 
     for y in 0..height {
-        let y_scaled = (y as f32) / (height as f32);
         for x in 0..width {
             if let Some(p) = bitmap.get_mut(x, y) {
-                let x_scaled = (x as f32) / (width as f32);
-                let ray = Ray::new(origin,
-                                   lower_left_corner.add(
-                                       horizontal.multiply_scalar(x_scaled).add(vertical.multiply_scalar(y_scaled))));
+                let mut c = Vec3::zero();
 
-                let color = color(&ray, &world);
-                let r = (color.x * std::u8::MAX as f32) as u32;
-                let g = (color.y * std::u8::MAX as f32) as u32;
-                let b = (color.z * std::u8::MAX as f32) as u32;
+                for _ in 0..aa_samples {
+                    let x_scaled = ((x as f32) + random.gen_range(0.0, 1.0)) / (width as f32);
+                    let y_scaled = ((y as f32) + random.gen_range(0.0, 1.0)) / (height as f32);
+                    c = c.add(color(&camera.ray(x_scaled, y_scaled), &world));
+                }
+
+                c = c.div_scalar(aa_samples as f32);
+                let r = (c.x * std::u8::MAX as f32) as u32;
+                let g = (c.y * std::u8::MAX as f32) as u32;
+                let b = (c.z * std::u8::MAX as f32) as u32;
                 *p = (*p & 0xff0000ff) | r << 16 | g << 8 | b;
             }
         }
