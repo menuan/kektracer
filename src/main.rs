@@ -166,7 +166,20 @@ impl Ray {
     }
 }
 
+fn hit_sphere(center: Vec3, radius: f32, ray: &Ray) -> bool {
+    let oc = ray.origin().subtract(center);
+    let a = ray.direction().dot(ray.direction());
+    let b = 2.0 * oc.dot(ray.direction());
+    let c = oc.dot(oc) - radius * radius;
+    let discriminant = b * b - 4.0 * a * c;
+    discriminant > 0.0
+}
+
 fn color(ray: &Ray) -> Vec3 {
+    if hit_sphere(Vec3::new(0.0, 0.0, -1.0), 0.5, &ray) {
+        return Vec3::new(1.0, 0.0, 0.0);
+    }
+
     let unit_direction = ray.direction().unit_vector();
     let t = 0.5 * (unit_direction.y() + 1.0);
     Vec3::new(1.0, 1.0, 1.0)
@@ -210,7 +223,7 @@ fn main() -> Result<(), Box<Error>> {
     let width = 200;
     let height = 100;
     let mut options = WindowOptions::default();
-    options.scale = Scale::X2;
+    options.scale = Scale::X4;
     let mut window = Window::new("Raytracer", width, height, options)?;
     window.set_cursor_style(CursorStyle::ClosedHand);
 
