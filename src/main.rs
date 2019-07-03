@@ -227,7 +227,7 @@ impl Ray {
     }
 
     fn point_at_parameter(&self, t: f32) -> Vec3 {
-        self.origin.add(self.direction.multiply_scalar(t))
+        self.origin + self.direction * t
     }
 }
 
@@ -329,14 +329,12 @@ impl Camera {
 fn color(ray: &Ray, world: &World) -> Vec3 {
     if let Some(hit) = world.hit_test(ray, 0.0, 100000.0) {
         let normal = hit.normal;
-        return Vec3::new(normal.x + 1.0, normal.y + 1.0, normal.z + 1.0).multiply_scalar(0.5);
+        return Vec3::new(normal.x + 1.0, normal.y + 1.0, normal.z + 1.0) * 0.5;
     }
 
     let unit_direction = ray.direction().unit_vector();
     let t = 0.5 * (unit_direction.y + 1.0);
-    Vec3::new(1.0, 1.0, 1.0)
-        .multiply_scalar(1.0 - t)
-        .add(Vec3::new(0.5, 0.7, 1.0).multiply_scalar(t))
+    Vec3::new(1.0, 1.0, 1.0) * (1.0 - t) + Vec3::new(0.5, 0.7, 1.0) * t
 }
 
 fn render(bitmap: &mut Bitmap) {
@@ -359,14 +357,14 @@ fn render(bitmap: &mut Bitmap) {
                 for _ in 0..aa_samples {
                     let x_scaled = ((x as f32) + random.gen_range(0.0, 1.0)) / (width as f32);
                     let y_scaled = ((y as f32) + random.gen_range(0.0, 1.0)) / (height as f32);
-                    c = c.add(color(&camera.ray(x_scaled, y_scaled), &world));
+                    c = c + color(&camera.ray(x_scaled, y_scaled), &world);
                 }
 
-                c = c.div_scalar(aa_samples as f32);
+                c = c / aa_samples as f32;
                 let r = (c.x * std::u8::MAX as f32) as u32;
                 let g = (c.y * std::u8::MAX as f32) as u32;
                 let b = (c.z * std::u8::MAX as f32) as u32;
-                *p = (*p & 0xff0000ff) | r << 16 | g << 8 | b;
+                *p = (*p & 0xff000000) | r << 16 | g << 8 | b;
             }
         }
     }
