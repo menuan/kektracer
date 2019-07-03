@@ -135,7 +135,78 @@ impl Vec3 {
     }
 }
 
-#[derive(Clone, Copy)]
+impl std::ops::Add<Self> for Vec3 {
+    type Output = Vec3;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        self.add(rhs)
+    }
+}
+
+impl std::ops::Neg for Vec3 {
+    type Output = Vec3;
+
+    fn neg(self) -> Self::Output {
+        self.negate()
+    }
+}
+
+impl std::ops::Sub<Self> for Vec3 {
+    type Output = Vec3;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        self.subtract(rhs)
+    }
+}
+
+impl std::ops::Mul<Self> for Vec3 {
+    type Output = Vec3;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        self.multiply(rhs)
+    }
+}
+
+impl std::ops::Mul<f32> for Vec3 {
+    type Output = Vec3;
+
+    fn mul(self, rhs: f32) -> Self::Output {
+        self.multiply_scalar(rhs)
+    }
+}
+
+impl std::ops::Mul<Vec3> for f32 {
+    type Output = Vec3;
+
+    fn mul(self, rhs: Vec3) -> Self::Output {
+        rhs * self
+    }
+}
+
+impl std::ops::Div<Self> for Vec3 {
+    type Output = Vec3;
+
+    fn div(self, rhs: Self) -> Self::Output {
+        self.div(rhs)
+    }
+}
+
+impl std::ops::Div<f32> for Vec3 {
+    type Output = Vec3;
+
+    fn div(self, rhs: f32) -> Self::Output {
+        self.div_scalar(rhs)
+    }
+}
+
+impl std::ops::Div<Vec3> for f32 {
+    type Output = Vec3;
+
+    fn div(self, rhs: Vec3) -> Self::Output {
+        rhs / self
+    }
+}
+
 struct Ray {
     origin: Vec3,
     direction: Vec3,
@@ -146,15 +217,15 @@ impl Ray {
         Ray { origin, direction }
     }
 
-    fn origin(self) -> Vec3 {
+    fn origin(&self) -> Vec3 {
         self.origin
     }
 
-    fn direction(self) -> Vec3 {
+    fn direction(&self) -> Vec3 {
         self.direction
     }
 
-    fn point_at_parameter(self, t: f32) -> Vec3 {
+    fn point_at_parameter(&self, t: f32) -> Vec3 {
         self.origin.add(self.direction.multiply_scalar(t))
     }
 }
@@ -182,7 +253,7 @@ impl Sphere {
     }
 
     fn hit_test(&self, ray: &Ray, t_min: f32, t_max: f32) -> Option<Hit> {
-        let oc = ray.origin().subtract(self.center);
+        let oc = ray.origin() - self.center;
         let a = ray.direction().dot(ray.direction());
         let b = oc.dot(ray.direction());
         let c = oc.dot(oc) - self.radius * self.radius;
@@ -192,16 +263,12 @@ impl Sphere {
             let temp = (-b - (b * b - a * c).sqrt()) / a;
             if temp < t_max && temp > t_min {
                 let point = ray.point_at_parameter(temp);
-                return Some(Hit::new(temp,
-                                     point,
-                                     point.subtract(self.center).div_scalar(self.radius)));;
+                return Some(Hit::new(temp, point, (point - self.center) / self.radius));
             }
             let temp = (-b + (b * b - a * c).sqrt()) / a;
             if temp < t_max && temp > t_min {
                 let point = ray.point_at_parameter(temp);
-                return Some(Hit::new(temp,
-                                     point,
-                                     point.subtract(self.center).div_scalar(self.radius)));
+                return Some(Hit::new(temp, point, (point - self.center) / self.radius));
             }
         }
 
@@ -252,7 +319,8 @@ impl Camera {
     }
 
     fn ray(&self, u: f32, v: f32) -> Ray {
-        Ray::new(self.origin, self.lower_left_corner.add(self.horizontal.multiply_scalar(u).add(self.vertical.multiply_scalar(v))))
+        Ray::new(self.origin,
+                 self.lower_left_corner + u * self.horizontal + v * self.vertical)
     }
 }
 
