@@ -51,6 +51,21 @@ impl Vec3 {
         Vec3 { x, y, z }
     }
 
+    fn random_in_unit_sphere() -> Vec3 {
+        let mut random = rand::thread_rng();
+
+        loop {
+            let x = random.gen_range(-1.0, 1.0);
+            let y = random.gen_range(-1.0, 1.0);
+            let z = random.gen_range(-1.0, 1.0);
+            let p = Vec3::new(x, y, z);
+
+            if p.squared_length() < 1.0 {
+                return p
+            }
+        }
+    }
+
     fn zero() -> Vec3 {
         Vec3::new(0.00, 0.0, 0.0)
     }
@@ -291,11 +306,10 @@ impl World {
         let mut result = None;
 
         self.spheres.iter().for_each(|s| {
-            s.hit_test(ray, t_min, closest_t)
-                .map(|h| {
-                    closest_t = h.t;
-                    result = Some(h);
-                });
+            if let Some(hit) = s.hit_test(ray, t_min, closest_t) {
+                closest_t = hit.t;
+                result = Some(hit);
+            }
         });
 
         result
@@ -325,11 +339,10 @@ impl Camera {
     }
 }
 
-
 fn color(ray: &Ray, world: &World) -> Vec3 {
-    if let Some(hit) = world.hit_test(ray, 0.0, 100000.0) {
-        let normal = hit.normal;
-        return Vec3::new(normal.x + 1.0, normal.y + 1.0, normal.z + 1.0) * 0.5;
+    if let Some(hit) = world.hit_test(ray, 0.001, 100000.0) {
+        let target = hit.position + hit.normal + Vec3::random_in_unit_sphere();
+        return 0.5 * color(&Ray::new(hit.position, target - hit.position), world);
     }
 
     let unit_direction = ray.direction().unit_vector();
@@ -338,6 +351,10 @@ fn color(ray: &Ray, world: &World) -> Vec3 {
 }
 
 fn render(bitmap: &mut Bitmap) {
+    fn apply_gamma_2_correction(c: Vec3) -> Vec3 {
+        Vec3::new(c.x.sqrt(), c.y.sqrt(), c.z.sqrt())
+    }
+
     let world = World::new(vec![
         Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5),
         Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0)
@@ -361,6 +378,7 @@ fn render(bitmap: &mut Bitmap) {
                 }
 
                 c = c / aa_samples as f32;
+                c = apply_gamma_2_correction(c);
                 let r = (c.x * std::u8::MAX as f32) as u32;
                 let g = (c.y * std::u8::MAX as f32) as u32;
                 let b = (c.z * std::u8::MAX as f32) as u32;
@@ -371,10 +389,10 @@ fn render(bitmap: &mut Bitmap) {
 }
 
 fn main() -> Result<(), Box<Error>> {
-    let width = 200;
-    let height = 100;
+    let width = 400;
+    let height = 200;
     let mut options = WindowOptions::default();
-    options.scale = Scale::X4;
+    options.scale = Scale::X2;
     let mut window = Window::new("Raytracer", width, height, options)?;
     window.set_cursor_style(CursorStyle::ClosedHand);
 
