@@ -1,4 +1,4 @@
-use minifb::{Window, WindowOptions, Key, CursorStyle, MouseMode, MouseButton};
+use minifb::{Window, WindowOptions, Key, CursorStyle, MouseMode, MouseButton, Scale};
 use std::error::Error;
 
 struct Bitmap {
@@ -9,7 +9,19 @@ struct Bitmap {
 
 impl Bitmap {
     fn new(width: usize, height: usize) -> Bitmap {
-        Bitmap { width, height, buffer: vec![0; width * height] }
+        Bitmap {
+            width,
+            height,
+            buffer: vec![0; width * height],
+        }
+    }
+
+    fn width(&self) -> usize {
+        self.width
+    }
+
+    fn height(&self) -> usize {
+        self.height
     }
 
     fn get_mut(&mut self, x: usize, y: usize) -> Option<&mut u32> {
@@ -50,31 +62,59 @@ impl Vec3 {
     }
 
     fn add(self, other: Vec3) -> Vec3 {
-        Vec3 { x: self.x + other.x, y: self.y + other.y, z: self.z + other.z }
+        Vec3 {
+            x: self.x + other.x,
+            y: self.y + other.y,
+            z: self.z + other.z,
+        }
     }
 
     fn subtract(self, other: Vec3) -> Vec3 {
-        Vec3 { x: self.x - other.x, y: self.y - other.y, z: self.z - other.z }
+        Vec3 {
+            x: self.x - other.x,
+            y: self.y - other.y,
+            z: self.z - other.z,
+        }
     }
 
     fn negate(self) -> Vec3 {
-        Vec3 { x: -self.x, y: -self.y, z: -self.z }
+        Vec3 {
+            x: -self.x,
+            y: -self.y,
+            z: -self.z,
+        }
     }
 
     fn multiply(self, other: Vec3) -> Vec3 {
-        Vec3 { x: self.x * other.x, y: self.y * other.y, z: self.z * other.z }
+        Vec3 {
+            x: self.x * other.x,
+            y: self.y * other.y,
+            z: self.z * other.z,
+        }
     }
 
     fn multiply_scalar(self, scalar: f32) -> Vec3 {
-        Vec3 { x: self.x * scalar, y: self.y * scalar, z: self.z * scalar }
+        Vec3 {
+            x: self.x * scalar,
+            y: self.y * scalar,
+            z: self.z * scalar,
+        }
     }
 
     fn div(self, other: Vec3) -> Vec3 {
-        Vec3 { x: self.x / other.x, y: self.y / other.y, z: self.z / other.z }
+        Vec3 {
+            x: self.x / other.x,
+            y: self.y / other.y,
+            z: self.z / other.z,
+        }
     }
 
     fn div_scalar(self, scalar: f32) -> Vec3 {
-        Vec3 { x: self.x / scalar, y: self.y / scalar, z: self.z / scalar }
+        Vec3 {
+            x: self.x / scalar,
+            y: self.y / scalar,
+            z: self.z / scalar,
+        }
     }
 
     fn dot(self, other: Vec3) -> f32 {
@@ -85,7 +125,7 @@ impl Vec3 {
         Vec3 {
             x: self.y * other.z - self.z * other.y,
             y: -(self.x * other.z - self.z * other.x),
-            z: self.x * other.y - self.y * other.x
+            z: self.x * other.y - self.y * other.x,
         }
     }
 
@@ -102,31 +142,66 @@ impl Vec3 {
     }
 }
 
-fn main() -> Result<(), Box<Error>> {
-    let width = 800;
-    let height = 600;
-    let mut window = Window::new("Raytracer", width, height, WindowOptions::default())?;
-    window.set_cursor_style(CursorStyle::ClosedHand);
+#[derive(Clone, Copy)]
+struct Ray {
+    origin: Vec3,
+    direction: Vec3,
+}
 
-    let mut bitmap = Bitmap::new(width, height);
+impl Ray {
+    fn new(origin: Vec3, direction: Vec3) -> Ray {
+        Ray { origin, direction }
+    }
 
+    fn origin(self) -> Vec3 {
+        self.origin
+    }
+
+    fn direction(self) -> Vec3 {
+        self.direction
+    }
+
+    fn point_at_parameter(self, t: f32) -> Vec3 {
+        self.origin.add(self.direction.multiply_scalar(t))
+    }
+}
+
+fn render(bitmap: &mut Bitmap) {
+    let width = bitmap.width();
+    let height = bitmap.height();
     for y in 0..height {
         let y_scaled = (y as f32) / (height as f32);
         for x in 0..width {
             let x_scaled = (x as f32) / (width as f32);
-            bitmap.get_mut(x, y).map(|p| {
-                let r = (x_scaled * std::u8::MAX as f32) as u32;
-                let g = (y_scaled * std::u8::MAX as f32) as u32;
-                let b = 24;
-                *p = (*p & 0xff0000ff) | r << 16 | g << 8 | b;
-            });
+            bitmap
+                .get_mut(x, y)
+                .map(|p| {
+                         let r = (x_scaled * std::u8::MAX as f32) as u32;
+                         let g = (y_scaled * std::u8::MAX as f32) as u32;
+                         let b = 24;
+                         *p = (*p & 0xff0000ff) | r << 16 | g << 8 | b;
+                     });
         }
     }
+}
 
-    while window.is_open() && !window.is_key_down(Key::Escape) {
+fn main() -> Result<(), Box<Error>> {
+    let width = 200;
+    let height = 100;
+    let mut options = WindowOptions::default();
+    options.scale = Scale::X2;
+    let mut window = Window::new("Raytracer", width, height, options)?;
+    window.set_cursor_style(CursorStyle::ClosedHand);
+
+    let mut bitmap = Bitmap::new(width, height);
+    render(&mut bitmap);
+
+    while window.is_open() && !window.is_key_down(Key::Escape) && !window.is_key_down(Key::Q) {
         if window.get_mouse_down(MouseButton::Left) {
             if let Some((x, y)) = window.get_mouse_pos(MouseMode::Discard) {
-                bitmap.get_mut(x as usize, y as usize).map(|p| *p = 0xffffffff);
+                bitmap
+                    .get_mut(x as usize, y as usize)
+                    .map(|p| *p = 0xffffffff);
             }
         }
         window.update_with_buffer(bitmap.buffer())?;
@@ -134,4 +209,3 @@ fn main() -> Result<(), Box<Error>> {
 
     Ok(())
 }
-
