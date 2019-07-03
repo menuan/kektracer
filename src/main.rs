@@ -28,7 +28,7 @@ impl Bitmap {
         if x >= self.width || y >= self.height {
             None
         } else {
-            Some(&mut self.buffer[y * self.width + x])
+            Some(&mut self.buffer[(self.height - y - 1) * self.width + (x)])
         }
     }
 
@@ -166,9 +166,23 @@ impl Ray {
     }
 }
 
+fn color(ray: &Ray) -> Vec3 {
+    let unit_direction = ray.direction().unit_vector();
+    let t = 0.5 * (unit_direction.y() + 1.0);
+    Vec3::new(1.0, 1.0, 1.0)
+        .multiply_scalar(1.0 - t)
+        .add(Vec3::new(0.5, 0.7, 1.0).multiply_scalar(t))
+}
+
 fn render(bitmap: &mut Bitmap) {
     let width = bitmap.width();
     let height = bitmap.height();
+
+    let lower_left_corner = Vec3::new(-2.0, -1.0, -1.0);
+    let horizontal = Vec3::new(4.0, 0.0, 0.0);
+    let vertical = Vec3::new(0.0, 2.0, 0.0);
+    let origin = Vec3::new(0.0, 0.0, 0.0);
+
     for y in 0..height {
         let y_scaled = (y as f32) / (height as f32);
         for x in 0..width {
@@ -176,11 +190,18 @@ fn render(bitmap: &mut Bitmap) {
             bitmap
                 .get_mut(x, y)
                 .map(|p| {
-                         let r = (x_scaled * std::u8::MAX as f32) as u32;
-                         let g = (y_scaled * std::u8::MAX as f32) as u32;
-                         let b = 24;
-                         *p = (*p & 0xff0000ff) | r << 16 | g << 8 | b;
-                     });
+                    let ray =
+                        Ray::new(origin,
+                                 lower_left_corner
+                                     .add(horizontal
+                                              .multiply_scalar(x_scaled)
+                                              .add(vertical.multiply_scalar(y_scaled))));
+                    let color = color(&ray);
+                    let r = (color.x() * std::u8::MAX as f32) as u32;
+                    let g = (color.y() * std::u8::MAX as f32) as u32;
+                    let b = (color.z() * std::u8::MAX as f32) as u32;
+                    *p = (*p & 0xff0000ff) | r << 16 | g << 8 | b;
+                });
         }
     }
 }
