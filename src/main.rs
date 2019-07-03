@@ -49,18 +49,6 @@ impl Vec3 {
         Vec3 { x, y, z }
     }
 
-    fn x(self) -> f32 {
-        self.x
-    }
-
-    fn y(self) -> f32 {
-        self.y
-    }
-
-    fn z(self) -> f32 {
-        self.z
-    }
-
     fn add(self, other: Vec3) -> Vec3 {
         Vec3 {
             x: self.x + other.x,
@@ -124,7 +112,7 @@ impl Vec3 {
     fn cross(self, other: Vec3) -> Vec3 {
         Vec3 {
             x: self.y * other.z - self.z * other.y,
-            y: -(self.x * other.z - self.z * other.x),
+            y: self.z * other.x - self.x * other.z,
             z: self.x * other.y - self.y * other.x,
         }
     }
@@ -166,55 +154,124 @@ impl Ray {
     }
 }
 
-fn hit_sphere(center: Vec3, radius: f32, ray: &Ray) -> bool {
-    let oc = ray.origin().subtract(center);
-    let a = ray.direction().dot(ray.direction());
-    let b = 2.0 * oc.dot(ray.direction());
-    let c = oc.dot(oc) - radius * radius;
-    let discriminant = b * b - 4.0 * a * c;
-    discriminant > 0.0
+struct Hit {
+    t: f32,
+    position: Vec3,
+    normal: Vec3,
 }
 
-fn color(ray: &Ray) -> Vec3 {
-    if hit_sphere(Vec3::new(0.0, 0.0, -1.0), 0.5, &ray) {
-        return Vec3::new(1.0, 0.0, 0.0);
+impl Hit {
+    fn new(t: f32, position: Vec3, normal: Vec3) -> Hit {
+        Hit { t, position, normal }
+    }
+}
+
+struct Sphere {
+    center: Vec3,
+    radius: f32,
+}
+
+impl Sphere {
+    fn new(center: Vec3, radius: f32) -> Sphere {
+        Sphere { center, radius }
+    }
+
+    fn hit_test(&self, ray: &Ray, t_min: f32, t_max: f32) -> Option<Hit> {
+        let oc = ray.origin().subtract(self.center);
+        let a = ray.direction().dot(ray.direction());
+        let b = oc.dot(ray.direction());
+        let c = oc.dot(oc) - self.radius * self.radius;
+        let discriminant = b * b - a * c;
+
+        if discriminant > 0.0 {
+            let temp = (-b - (b * b - a * c).sqrt()) / a;
+            if temp < t_max && temp > t_min {
+                let point = ray.point_at_parameter(temp);
+                return Some(Hit::new(temp,
+                                     point,
+                                     point.subtract(self.center).div_scalar(self.radius)));;
+            }
+            let temp = (-b + (b * b - a * c).sqrt()) / a;
+            if temp < t_max && temp > t_min {
+                let point = ray.point_at_parameter(temp);
+                return Some(Hit::new(temp,
+                                     point,
+                                     point.subtract(self.center).div_scalar(self.radius)));
+            }
+        }
+
+        None
+    }
+}
+
+struct World {
+    spheres: Vec<Sphere>,
+}
+
+impl World {
+    fn new(spheres: Vec<Sphere>) -> World {
+        World { spheres }
+    }
+
+    fn hit_test(&self, ray: &Ray, t_min: f32, t_max: f32) -> Option<Hit> {
+        let mut closest_t = t_max;
+        let mut result = None;
+
+        self.spheres.iter().for_each(|s| {
+            s.hit_test(ray, t_min, closest_t)
+                .map(|h| {
+                    closest_t = h.t;
+                    result = Some(h);
+                });
+        });
+
+        result
+    }
+}
+
+
+fn color(ray: &Ray, world: &World) -> Vec3 {
+    if let Some(hit) = world.hit_test(ray, 0.0, 100000.0) {
+        let normal = hit.normal;
+        return Vec3::new(normal.x + 1.0, normal.y + 1.0, normal.z + 1.0).multiply_scalar(0.5);
     }
 
     let unit_direction = ray.direction().unit_vector();
-    let t = 0.5 * (unit_direction.y() + 1.0);
+    let t = 0.5 * (unit_direction.y + 1.0);
     Vec3::new(1.0, 1.0, 1.0)
         .multiply_scalar(1.0 - t)
         .add(Vec3::new(0.5, 0.7, 1.0).multiply_scalar(t))
 }
 
 fn render(bitmap: &mut Bitmap) {
-    let width = bitmap.width();
-    let height = bitmap.height();
+    let world = World::new(vec![
+        Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5),
+        Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0)
+    ]);
 
     let lower_left_corner = Vec3::new(-2.0, -1.0, -1.0);
     let horizontal = Vec3::new(4.0, 0.0, 0.0);
     let vertical = Vec3::new(0.0, 2.0, 0.0);
     let origin = Vec3::new(0.0, 0.0, 0.0);
 
+    let width = bitmap.width();
+    let height = bitmap.height();
+
     for y in 0..height {
         let y_scaled = (y as f32) / (height as f32);
         for x in 0..width {
-            let x_scaled = (x as f32) / (width as f32);
-            bitmap
-                .get_mut(x, y)
-                .map(|p| {
-                    let ray =
-                        Ray::new(origin,
-                                 lower_left_corner
-                                     .add(horizontal
-                                              .multiply_scalar(x_scaled)
-                                              .add(vertical.multiply_scalar(y_scaled))));
-                    let color = color(&ray);
-                    let r = (color.x() * std::u8::MAX as f32) as u32;
-                    let g = (color.y() * std::u8::MAX as f32) as u32;
-                    let b = (color.z() * std::u8::MAX as f32) as u32;
-                    *p = (*p & 0xff0000ff) | r << 16 | g << 8 | b;
-                });
+            if let Some(p) = bitmap.get_mut(x, y) {
+                let x_scaled = (x as f32) / (width as f32);
+                let ray = Ray::new(origin,
+                                   lower_left_corner.add(
+                                       horizontal.multiply_scalar(x_scaled).add(vertical.multiply_scalar(y_scaled))));
+
+                let color = color(&ray, &world);
+                let r = (color.x * std::u8::MAX as f32) as u32;
+                let g = (color.y * std::u8::MAX as f32) as u32;
+                let b = (color.z * std::u8::MAX as f32) as u32;
+                *p = (*p & 0xff0000ff) | r << 16 | g << 8 | b;
+            }
         }
     }
 }
@@ -234,7 +291,7 @@ fn main() -> Result<(), Box<Error>> {
         if window.get_mouse_down(MouseButton::Left) {
             if let Some((x, y)) = window.get_mouse_pos(MouseMode::Discard) {
                 bitmap
-                    .get_mut(x as usize, y as usize)
+                    .get_mut(x as usize, height - (y as usize) - 1)
                     .map(|p| *p = 0xffffffff);
             }
         }
