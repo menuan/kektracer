@@ -28,9 +28,7 @@ impl Bitmap {
 fn main() -> Result<(), Box<Error>> {
     let width = 800;
     let height = 600;
-    let mut options = WindowOptions::default();
-    options.resize = true;
-    let mut window = Window::new("Raytracer",width, height, options)?;
+    let mut window = Window::new("Game of life",width, height, WindowOptions::default())?;
     window.set_cursor_style(CursorStyle::ClosedHand);
 
     let mut bitmap = Bitmap::new(width, height);
