@@ -1,7 +1,24 @@
-use minifb::{Window, WindowOptions, Key, CursorStyle, MouseMode, MouseButton, Scale};
+use minifb::{Window, WindowOptions, Key, Scale};
 use std::error::Error;
 use rand::Rng;
-use std::time::Instant;
+use std::time::{Instant, Duration};
+use std::thread::sleep;
+
+fn time<F: FnOnce()>(f: F) -> Duration {
+    let timer = Instant::now();
+    f();
+    timer.elapsed()
+}
+
+fn clamped<T: PartialOrd>(x: T, min: T, max: T) -> T {
+    if x < min {
+        min
+    } else if x > max {
+        max
+    } else {
+        x
+    }
+}
 
 struct Bitmap {
     width: usize,
@@ -246,6 +263,47 @@ impl Ray {
     }
 }
 
+struct MaterialScatter {
+    attenuation: Vec3,
+    scattered_ray: Ray
+}
+
+#[derive(Clone, Copy)]
+enum Material {
+    Diffuse { albedo: Vec3 },
+    Metal { albedo: Vec3, fuzz: f32 }
+}
+
+impl Material {
+    fn scatter(&self, ray: &Ray, hit: &Hit) -> Option<MaterialScatter> {
+        match self {
+            Material::Diffuse { albedo } => {
+                let target = hit.position + hit.normal + Vec3::random_in_unit_sphere();
+                Some(MaterialScatter {
+                    attenuation: *albedo,
+                    scattered_ray: Ray::new(hit.position, target - hit.position)
+                })
+            }
+            Material::Metal { albedo, fuzz } => {
+                fn reflect(v: Vec3, normal: Vec3) -> Vec3 {
+                    v - 2.0 * v.dot(normal) * normal
+                }
+
+                let reflected = reflect(ray.direction.unit_vector(), hit.normal);
+                let scattered_ray = Ray::new(hit.position, reflected + clamped(*fuzz, 0.0, 1.0) * Vec3::random_in_unit_sphere());
+                if scattered_ray.direction.dot(hit.normal) > 0.0 {
+                    Some(MaterialScatter{
+                        attenuation: *albedo,
+                        scattered_ray
+                    })
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
 struct Hit {
     t: f32,
     position: Vec3,
@@ -261,11 +319,12 @@ impl Hit {
 struct Sphere {
     center: Vec3,
     radius: f32,
+    material: Material
 }
 
 impl Sphere {
-    fn new(center: Vec3, radius: f32) -> Sphere {
-        Sphere { center, radius }
+    fn new(center: Vec3, radius: f32, material: Material) -> Sphere {
+        Sphere { center, radius, material }
     }
 
     fn hit_test(&self, ray: &Ray, t_min: f32, t_max: f32) -> Option<Hit> {
@@ -301,14 +360,14 @@ impl World {
         World { spheres }
     }
 
-    fn hit_test(&self, ray: &Ray, t_min: f32, t_max: f32) -> Option<Hit> {
+    fn hit_test(&self, ray: &Ray, t_min: f32, t_max: f32) -> Option<(Hit, Material)> {
         let mut closest_t = t_max;
         let mut result = None;
 
         self.spheres.iter().for_each(|s| {
             if let Some(hit) = s.hit_test(ray, t_min, closest_t) {
                 closest_t = hit.t;
-                result = Some(hit);
+                result = Some((hit, s.material));
             }
         });
 
@@ -339,10 +398,17 @@ impl Camera {
     }
 }
 
-fn color(ray: &Ray, world: &World) -> Vec3 {
-    if let Some(hit) = world.hit_test(ray, 0.001, 100000.0) {
-        let target = hit.position + hit.normal + Vec3::random_in_unit_sphere();
-        return 0.5 * color(&Ray::new(hit.position, target - hit.position), world);
+fn color(ray: &Ray, world: &World, bounces: usize) -> Vec3 {
+    if let Some((hit, material)) = world.hit_test(ray, 0.001, 1000.0) {
+        if bounces == 0 {
+            return Vec3::zero();
+        }
+
+        return if let Some(scatter) = material.scatter(ray, &hit) {
+            scatter.attenuation * color(&scatter.scattered_ray, world, bounces - 1)
+        } else {
+            Vec3::zero()
+        }
     }
 
     let unit_direction = ray.direction().unit_vector();
@@ -356,14 +422,15 @@ fn render(bitmap: &mut Bitmap) {
     }
 
     let world = World::new(vec![
-        Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5),
-        Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0)
+        Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0, Material::Diffuse { albedo: Vec3::new(0.8, 0.8, 0.0) }),
+        Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, Material::Diffuse { albedo: Vec3::new(0.8, 0.3, 0.3) }),
+        Sphere::new(Vec3::new(1.0, 0.0, -1.0), 0.5, Material::Metal { albedo: Vec3::new(0.6, 0.6, 0.8), fuzz: 0.1 }),
     ]);
 
     let camera = Camera::new();
     let width = bitmap.width();
     let height = bitmap.height();
-    let aa_samples = 10;
+    let aa_samples = 100;
     let mut random = rand::thread_rng();
 
     for y in 0..height {
@@ -374,7 +441,7 @@ fn render(bitmap: &mut Bitmap) {
                 for _ in 0..aa_samples {
                     let x_scaled = ((x as f32) + random.gen_range(0.0, 1.0)) / (width as f32);
                     let y_scaled = ((y as f32) + random.gen_range(0.0, 1.0)) / (height as f32);
-                    c = c + color(&camera.ray(x_scaled, y_scaled), &world);
+                    c = c + color(&camera.ray(x_scaled, y_scaled), &world, 30);
                 }
 
                 c = c / aa_samples as f32;
@@ -391,29 +458,29 @@ fn render(bitmap: &mut Bitmap) {
 fn main() -> Result<(), Box<Error>> {
     let width = 400;
     let height = 200;
+
+    let mut bitmap = Bitmap::new(width, height);
+    eprintln!("Rendering...");
+    let rendertime = time(|| { render(&mut bitmap) });
+    eprintln!("Render completed ({} ms)", rendertime.as_millis());
+
     let mut options = WindowOptions::default();
     options.scale = Scale::X2;
     let mut window = Window::new("Raytracer", width, height, options)?;
-    window.set_cursor_style(CursorStyle::ClosedHand);
+    window.update_with_buffer(bitmap.buffer())?;
 
-    let mut bitmap = Bitmap::new(width, height);
-
-    {
-        eprintln!("Rendering...");
-        let pre_render_instant = Instant::now();
-        render(&mut bitmap);
-        eprintln!("Render completed ({} ms)", pre_render_instant.elapsed().as_millis());
-    }
-
+    let event_poll_frequency = 30.0;
+    let millis_per_frame = (1.0 / event_poll_frequency * 1000.0) as i64;
+    let mut event_poll_start = Instant::now();
     while window.is_open() && !window.is_key_down(Key::Escape) && !window.is_key_down(Key::Q) {
-        if window.get_mouse_down(MouseButton::Left) {
-            if let Some((x, y)) = window.get_mouse_pos(MouseMode::Discard) {
-                bitmap
-                    .get_mut(x as usize, height - (y as usize) - 1)
-                    .map(|p| *p = 0xffffffff);
-            }
-        }
         window.update_with_buffer(bitmap.buffer())?;
+
+        let remaining_ms = millis_per_frame - event_poll_start.elapsed().as_millis() as i64;
+        if remaining_ms > 0 {
+            sleep(Duration::from_millis(remaining_ms as u64));
+        }
+
+        event_poll_start = Instant::now();
     }
 
     Ok(())
