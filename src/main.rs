@@ -3,6 +3,7 @@ use std::error::Error;
 use rand::Rng;
 use std::time::{Instant, Duration};
 use std::thread::sleep;
+use rayon::prelude::*;
 
 fn time<F: FnOnce()>(f: F) -> Duration {
     let timer = Instant::now();
@@ -49,6 +50,19 @@ impl Bitmap {
         } else {
             Some(&mut self.buffer[(self.height - y - 1) * self.width + (x)])
         }
+    }
+
+    fn iter_mut(& mut self) -> impl Iterator<Item=(usize, usize, &mut u32)> {
+        let width = self.width;
+        let height = self.height;
+        self.buffer
+            .iter_mut()
+            .enumerate()
+            .map(move |(i, v)| {
+                let y = i / width;
+                let x = i - y * width;
+                (x, height - y - 1, v)
+            })
     }
 
     fn buffer(&self) -> &[u32] {
@@ -385,10 +399,10 @@ struct Camera {
 impl Camera {
     fn new() -> Camera {
         Camera {
-            lower_left_corner :  Vec3::new(-2.0, -1.0, -1.0),
-            horizontal :  Vec3::new(4.0, 0.0, 0.0),
-            vertical :  Vec3::new(0.0, 2.0, 0.0),
-            origin :  Vec3::new(0.0, 0.0, 0.0)
+            lower_left_corner: Vec3::new(-2.0, -1.0, -1.0),
+            horizontal: Vec3::new(4.0, 0.0, 0.0),
+            vertical: Vec3::new(0.0, 2.0, 0.0),
+            origin: Vec3::new(0.0, 0.0, 0.0)
         }
     }
 
@@ -431,28 +445,27 @@ fn render(bitmap: &mut Bitmap) {
     let width = bitmap.width();
     let height = bitmap.height();
     let aa_samples = 100;
-    let mut random = rand::thread_rng();
 
-    for y in 0..height {
-        for x in 0..width {
-            if let Some(p) = bitmap.get_mut(x, y) {
-                let mut c = Vec3::zero();
+    bitmap
+        .iter_mut()
+        .par_bridge()
+        .for_each(|(x, y, p)| {
+            let mut random = rand::thread_rng();
+            let mut c = Vec3::zero();
 
-                for _ in 0..aa_samples {
-                    let x_scaled = ((x as f32) + random.gen_range(0.0, 1.0)) / (width as f32);
-                    let y_scaled = ((y as f32) + random.gen_range(0.0, 1.0)) / (height as f32);
-                    c = c + color(&camera.ray(x_scaled, y_scaled), &world, 30);
-                }
-
-                c = c / aa_samples as f32;
-                c = apply_gamma_2_correction(c);
-                let r = (c.x * std::u8::MAX as f32) as u32;
-                let g = (c.y * std::u8::MAX as f32) as u32;
-                let b = (c.z * std::u8::MAX as f32) as u32;
-                *p = (*p & 0xff000000) | r << 16 | g << 8 | b;
+            for _ in 0..aa_samples {
+                let x_scaled = ((x as f32) + random.gen_range(0.0, 1.0)) / (width as f32);
+                let y_scaled = ((y as f32) + random.gen_range(0.0, 1.0)) / (height as f32);
+                c = c + color(&camera.ray(x_scaled, y_scaled), &world, 50);
             }
-        }
-    }
+
+            c = c / aa_samples as f32;
+            c = apply_gamma_2_correction(c);
+            let r = (c.x * std::u8::MAX as f32) as u32;
+            let g = (c.y * std::u8::MAX as f32) as u32;
+            let b = (c.z * std::u8::MAX as f32) as u32;
+            *p = (*p & 0xff000000) | r << 16 | g << 8 | b;
+        });
 }
 
 fn main() -> Result<(), Box<Error>> {
