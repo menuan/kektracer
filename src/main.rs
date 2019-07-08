@@ -180,6 +180,11 @@ impl Vec3 {
     fn unit_vector(self) -> Vec3 {
         self.div_scalar(self.length())
     }
+
+    fn lerp(from: Vec3, to: Vec3, v: f32) -> Vec3 {
+        let v = v.min(1.0).max(0.0);
+        from * (1.0 - v) + to * v
+    }
 }
 
 impl std::ops::Add<Self> for Vec3 {
@@ -424,9 +429,7 @@ fn color(ray: &Ray, world: &World, bounces: usize) -> Vec3 {
         }
     }
 
-    let unit_direction = ray.direction().unit_vector();
-    let t = 0.5 * (unit_direction.y + 1.0);
-    Vec3::new(1.0, 1.0, 1.0) * (1.0 - t) + Vec3::new(0.5, 0.7, 1.0) * t
+    Vec3::lerp(Vec3::new(1.0, 1.0, 1.0), Vec3::new(0.5, 0.7, 1.0), (ray.direction.unit_vector().y + 1.0) * 0.5)
 }
 
 fn render(bitmap: &mut Bitmap) {
@@ -437,7 +440,7 @@ fn render(bitmap: &mut Bitmap) {
     let spheres = vec![
         Sphere::new(Vec3::new(0.0, -100.0, 0.0), 100.0, Material::Diffuse { albedo: Vec3::new(0.8, 0.8, 0.0) }),
         Sphere::new(Vec3::new(-1.0, 0.3, 0.0), 0.3, Material::Metal { albedo: Vec3::new(0.6, 0.6, 0.6), fuzz: 0.4 }),
-        Sphere::new(Vec3::new(0.0, 0.5, 0.0), 0.5, Material::Diffuse { albedo: Vec3::new(0.7, 0.4, 0.4) }),
+        Sphere::new(Vec3::new(0.0, 0.5, 0.0), 0.5, Material::Diffuse { albedo: Vec3::new(0.9, 0.2, 0.2) }),
         Sphere::new(Vec3::new(1.0, 0.5, 0.0), 0.5, Material::Metal { albedo: Vec3::new(0.4, 0.4, 0.8), fuzz: 0.0 }),
     ];
 
