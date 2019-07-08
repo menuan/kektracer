@@ -226,7 +226,7 @@ impl std::ops::Mul<Vec3> for f32 {
     type Output = Vec3;
 
     fn mul(self, rhs: Vec3) -> Self::Output {
-        rhs * self
+        rhs.multiply_scalar(self)
     }
 }
 
@@ -243,14 +243,6 @@ impl std::ops::Div<f32> for Vec3 {
 
     fn div(self, rhs: f32) -> Self::Output {
         self.div_scalar(rhs)
-    }
-}
-
-impl std::ops::Div<Vec3> for f32 {
-    type Output = Vec3;
-
-    fn div(self, rhs: Vec3) -> Self::Output {
-        rhs / self
     }
 }
 
@@ -397,18 +389,25 @@ struct Camera {
 }
 
 impl Camera {
-    fn new() -> Camera {
+    fn new(origin: Vec3, look_at: Vec3, up: Vec3, vertical_fov: f32, aspect_ratio: f32) -> Camera {
+        let half_height = (vertical_fov.to_radians() / 2.0).tan();
+        let half_width = aspect_ratio * half_height;
+
+        // create orthonormal basis
+        let w = (origin - look_at).unit_vector();
+        let u = up.cross(w).unit_vector();
+        let v = w.cross(u);
+
         Camera {
-            lower_left_corner: Vec3::new(-2.0, -1.0, -1.0),
-            horizontal: Vec3::new(4.0, 0.0, 0.0),
-            vertical: Vec3::new(0.0, 2.0, 0.0),
-            origin: Vec3::new(0.0, 0.0, 0.0)
+            lower_left_corner: origin - half_width * u - half_height * v - w,
+            horizontal: 2.0 * half_width * u,
+            vertical: 2.0 * half_height * v,
+            origin,
         }
     }
 
     fn ray(&self, u: f32, v: f32) -> Ray {
-        Ray::new(self.origin,
-                 self.lower_left_corner + u * self.horizontal + v * self.vertical)
+        Ray::new(self.origin, self.lower_left_corner + u * self.horizontal + v * self.vertical - self.origin)
     }
 }
 
@@ -435,15 +434,22 @@ fn render(bitmap: &mut Bitmap) {
         Vec3::new(c.x.sqrt(), c.y.sqrt(), c.z.sqrt())
     }
 
-    let world = World::new(vec![
-        Sphere::new(Vec3::new(0.0, -100.5, -1.0), 100.0, Material::Diffuse { albedo: Vec3::new(0.8, 0.8, 0.0) }),
-        Sphere::new(Vec3::new(0.0, 0.0, -1.0), 0.5, Material::Diffuse { albedo: Vec3::new(0.8, 0.3, 0.3) }),
-        Sphere::new(Vec3::new(1.0, 0.0, -1.0), 0.5, Material::Metal { albedo: Vec3::new(0.6, 0.6, 0.8), fuzz: 0.1 }),
-    ]);
+    let spheres = vec![
+        Sphere::new(Vec3::new(0.0, -100.0, 0.0), 100.0, Material::Diffuse { albedo: Vec3::new(0.8, 0.8, 0.0) }),
+        Sphere::new(Vec3::new(-1.0, 0.3, 0.0), 0.3, Material::Metal { albedo: Vec3::new(0.6, 0.6, 0.6), fuzz: 0.4 }),
+        Sphere::new(Vec3::new(0.0, 0.5, 0.0), 0.5, Material::Diffuse { albedo: Vec3::new(0.7, 0.4, 0.4) }),
+        Sphere::new(Vec3::new(1.0, 0.5, 0.0), 0.5, Material::Metal { albedo: Vec3::new(0.4, 0.4, 0.8), fuzz: 0.0 }),
+    ];
 
-    let camera = Camera::new();
+    let world = World::new(spheres);
     let width = bitmap.width();
     let height = bitmap.height();
+    let camera = Camera::new(
+        Vec3::new(0.0, 2.0, 2.0),
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        60.0,
+        width as f32 / height as f32);
     let aa_samples = 100;
 
     bitmap
@@ -470,7 +476,7 @@ fn render(bitmap: &mut Bitmap) {
 
 fn main() -> Result<(), Box<Error>> {
     let width = 400;
-    let height = 200;
+    let height = 300;
 
     let mut bitmap = Bitmap::new(width, height);
     eprintln!("Rendering...");
